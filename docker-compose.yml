@@ -1,0 +1,37 @@
+version: "3.9"
+
+services:
+
+  api:
+    build: .
+    container_name: rag-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data                       # persist uploaded PDFs
+      - ./vectorstore/index:/app/vectorstore/index  # persist FAISS index
+      - ./evaluation:/app/evaluation           # persist RAGAs scores
+    environment:
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  streamlit:
+    build: .
+    container_name: rag-ui
+    command: streamlit run app/main.py --server.port 8501 --server.address 0.0.0.0
+    ports:
+      - "8501:8501"
+    environment:
+      - API_BASE=http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
