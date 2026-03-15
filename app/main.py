@@ -6,10 +6,13 @@ Run separately:  streamlit run app/main.py
 (Start the API first: uvicorn app.api:app --port 8000)
 """
 
+import os
+
 import httpx
 import streamlit as st
 
-API_BASE = "http://localhost:8000"
+# When running via docker-compose the UI container sets API_BASE=http://api:8000
+API_BASE = os.getenv("API_BASE", "http://localhost:8000")
 
 st.set_page_config(
     page_title="Agentic RAG Assistant",

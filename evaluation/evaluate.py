@@ -19,11 +19,15 @@ Add your own test questions to EVAL_DATASET below.
 
 from __future__ import annotations
 import json
+import os
 from pathlib import Path
 
 from datasets import Dataset
+from dotenv import load_dotenv
+from langchain_ollama import ChatOllama
 from loguru import logger
 from ragas import evaluate
+from ragas.llms import LangchainLLMWrapper
 from ragas.metrics import (
     faithfulness,
     answer_relevancy,
@@ -33,9 +37,23 @@ from ragas.metrics import (
 
 from app.agent import ask
 
+load_dotenv()
 
 SCORES_FILE = Path("evaluation/latest_scores.json")
 SCORES_FILE.parent.mkdir(exist_ok=True)
+
+# ── Wrap local Ollama as the RAGAs judge LLM ──────────────────────────────
+# RAGAs 0.2+ requires an explicit LLM for judge-based metrics.
+# We reuse the same Ollama model already running locally.
+_ollama = ChatOllama(
+    model=os.getenv("OLLAMA_MODEL", "llama3.2"),
+    temperature=0,
+)
+RAGAS_LLM = LangchainLLMWrapper(_ollama)
+
+# Apply the LLM to metrics that need a judge
+for _metric in (faithfulness, answer_relevancy, context_precision, context_recall):
+    _metric.llm = RAGAS_LLM  # type: ignore[attr-defined]
 
 # ── Replace/extend with questions about YOUR actual documents ──────────────
 # ground_truth: the ideal answer (used for context_recall only)
@@ -72,8 +90,8 @@ def run_evaluation() -> dict:
         q  = item["question"]
         gt = item["ground_truth"]
 
-        result   = ask(q)
-        answer   = result["answer"]
+        result    = ask(q)
+        answer    = result["answer"]
         ctx_texts = [c["text"] for c in result["sources"]]
 
         questions.append(q)

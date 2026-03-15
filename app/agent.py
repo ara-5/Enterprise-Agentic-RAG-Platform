@@ -24,7 +24,7 @@ State machine
 
 from __future__ import annotations
 import os
-from typing import TypedDict, List, Annotated, Literal
+from typing import Any, Dict, List, Annotated, Literal, Optional, TypedDict
 
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
@@ -53,13 +53,18 @@ MAX_REWRITES = 2   # prevent infinite loops
 
 # ── Agent state ──────────────────────────────────────────────────────────────
 
-class AgentState(TypedDict):
+class _AgentStateRequired(TypedDict):
     messages:      Annotated[List[BaseMessage], add_messages]   # full conversation history
     query:         str
     rewrite_count: int
-    context:       List[dict]   # retrieved chunk dicts from hybrid_search
+    context:       List[Dict[str, Any]]   # retrieved chunk dicts from hybrid_search
     web_results:   List[str]
     answer:        str
+
+class AgentState(_AgentStateRequired, total=False):
+    """LangGraph state — _route and _grade are injected by nodes, not part of initial state."""
+    _route: str   # 'documents' | 'llm_only'
+    _grade: str   # 'generate' | 'rewrite'
 
 
 # ── Node helpers ─────────────────────────────────────────────────────────────
@@ -67,8 +72,8 @@ class AgentState(TypedDict):
 def _last_human_query(state: AgentState) -> str:
     for msg in reversed(state["messages"]):
         if isinstance(msg, HumanMessage):
-            return msg.content
-    return state.get("query", "")
+            return str(msg.content)
+    return state.get("query") or ""  # type: ignore[union-attr]
 
 
 # ── Nodes ────────────────────────────────────────────────────────────────────
@@ -137,8 +142,8 @@ def rewrite_query(state: AgentState) -> AgentState:
         "Return only the rewritten question, nothing else."
     )
     response      = llm.invoke([HumanMessage(content=prompt)])
-    new_query     = response.content.strip()
-    rewrite_count = state.get("rewrite_count", 0) + 1
+    new_query     = str(response.content).strip()
+    rewrite_count = int(state.get("rewrite_count") or 0) + 1  # type: ignore[union-attr]
     logger.info(f"[rewrite_query] attempt {rewrite_count}: '{new_query[:80]}'")
     return {**state, "query": new_query, "rewrite_count": rewrite_count}
 
@@ -157,10 +162,10 @@ def generate(state: AgentState) -> AgentState:
     Final generation node — synthesises answer from context + conversation history.
     Adds citations (source + page) when using document context.
     """
-    query       = state["query"]
-    context     = state.get("context", [])
-    web_results = state.get("web_results", [])
-    history     = state.get("messages", [])
+    query:       str                    = state["query"]
+    context:     List[Dict[str, Any]]  = state.get("context") or []       # type: ignore[assignment]
+    web_results: List[str]             = state.get("web_results") or []    # type: ignore[assignment]
+    history:     List[BaseMessage]     = state.get("messages") or []       # type: ignore[assignment]
 
     # Build context block
     if context:
@@ -196,7 +201,7 @@ def generate(state: AgentState) -> AgentState:
     response = llm.invoke([
         HumanMessage(content=f"[SYSTEM]\n{system}\n\n[USER]\n{user_prompt}")
     ])
-    answer = response.content
+    answer = str(response.content)
     logger.info(f"[generate] answer length={len(answer)} chars")
     return {
         **state,
@@ -208,15 +213,15 @@ def generate(state: AgentState) -> AgentState:
 # ── Conditional edges ─────────────────────────────────────────────────────────
 
 def route_after_routing(state: AgentState) -> Literal["retrieve", "generate"]:
-    return "retrieve" if state.get("_route") == "documents" else "generate"
+    return "retrieve" if state.get("_route") == "documents" else "generate"  # type: ignore[union-attr]
 
 
 def route_after_grading(state: AgentState) -> Literal["generate", "rewrite_query", "web_search"]:
-    grade = state.get("_grade", "generate")
+    grade = state.get("_grade") or "generate"                               # type: ignore[union-attr]
     if grade == "generate":
         return "generate"
     # After MAX_REWRITES failed attempts, fall through to web search
-    if state.get("rewrite_count", 0) >= MAX_REWRITES:
+    if int(state.get("rewrite_count") or 0) >= MAX_REWRITES:               # type: ignore[union-attr]
         return "web_search"
     return "rewrite_query"
 
@@ -255,7 +260,7 @@ rag_agent = build_graph()
 
 # ── Public interface ──────────────────────────────────────────────────────────
 
-def ask(query: str, history: List[BaseMessage] | None = None) -> dict:
+def ask(query: str, history: Optional[List[BaseMessage]] = None) -> Dict[str, Any]:
     """
     Main entry point. Call from FastAPI or Streamlit.
     Returns {"answer": str, "sources": list, "rewrite_count": int}
@@ -269,9 +274,9 @@ def ask(query: str, history: List[BaseMessage] | None = None) -> dict:
         "web_results":   [],
         "answer":        "",
     }
-    final_state = rag_agent.invoke(initial_state)
+    final_state: Dict[str, Any] = rag_agent.invoke(initial_state)
     return {
-        "answer":        final_state["answer"],
+        "answer":        final_state.get("answer", ""),
         "sources":       final_state.get("context", []),
         "rewrite_count": final_state.get("rewrite_count", 0),
         "used_web":      bool(final_state.get("web_results")),
