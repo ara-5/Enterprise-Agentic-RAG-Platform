@@ -18,3 +18,7 @@ Thumbs.db
 
 # Auto-generated vector index
 vectorstore/index/
+
+# Virtual environment
+.venv/
+venv/
