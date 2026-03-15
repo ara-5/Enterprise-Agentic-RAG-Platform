@@ -1,0 +1,62 @@
+name: RAG Evaluation CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Pull Ollama + model (lightweight for CI)
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama serve &
+          sleep 5
+          ollama pull llama3.2:1b   # smallest model for fast CI
+
+      - name: Run ingestion on sample PDF
+        run: |
+          # Use a small test PDF if real data not available
+          python -m ingestion.ingest
+
+      - name: Run RAGAs evaluation
+        env:
+          OLLAMA_MODEL: llama3.2:1b
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+        run: python -m evaluation.evaluate
+
+      - name: Check quality gate (faithfulness ≥ 0.70)
+        run: |
+          python - <<'EOF'
+          import json, sys
+          scores = json.loads(open("evaluation/latest_scores.json").read())
+          faith  = scores.get("faithfulness", 0)
+          print(f"Faithfulness: {faith:.4f}")
+          if faith < 0.70:
+              print("FAIL: faithfulness below threshold 0.70")
+              sys.exit(1)
+          print("PASS: quality gate passed")
+          EOF
+
+      - name: Upload scores as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ragas-scores
+          path: evaluation/latest_scores.json

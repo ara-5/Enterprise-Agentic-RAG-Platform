@@ -12,3 +12,9 @@ models/
 # OS
 .DS_Store
 Thumbs.db
+
+# Secrets — never commit
+.env
+
+# Auto-generated vector index
+vectorstore/index/
