@@ -1,4 +1,4 @@
-# 🤖 Agentic RAG Document Assistant
+# 🤖 Enterprise Agentic RAG Platform
 
 > **Production-grade Retrieval-Augmented Generation system** with a LangGraph agentic loop, hybrid BM25+FAISS retrieval, cross-encoder reranking, Corrective RAG (query rewriting), web search fallback, RAGAs evaluation pipeline, FastAPI backend, and Docker deployment.
 
