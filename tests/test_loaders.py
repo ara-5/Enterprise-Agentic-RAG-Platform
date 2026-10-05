@@ -1,7 +1,7 @@
-import shutil
 from pathlib import Path
 
 import fitz
+import pytesseract
 import openpyxl
 import pytest
 from docx import Document
@@ -127,7 +127,25 @@ def test_unsupported_suffix_is_rejected(tmp_path):
         load_document(path)
 
 
-@pytest.mark.skipif(shutil.which("tesseract") is None, reason="tesseract binary not installed")
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def _tesseract_has(lang: str) -> bool:
+    try:
+        return lang in pytesseract.get_languages(config="")
+    except pytesseract.TesseractNotFoundError:
+        return False
+
+
+requires_tesseract = pytest.mark.skipif(
+    not _tesseract_has("eng"), reason="tesseract binary not installed"
+)
+requires_arabic = pytest.mark.skipif(
+    not _tesseract_has("ara"), reason="tesseract Arabic language data not installed"
+)
+
+
+@requires_tesseract
 def test_real_tesseract_ocr_reads_rendered_text(tmp_path, monkeypatch):
     monkeypatch.setattr(loaders, "OCR_LANGS", "eng")
     path = tmp_path / "scan.pdf"
@@ -140,3 +158,22 @@ def test_real_tesseract_ocr_reads_rendered_text(tmp_path, monkeypatch):
     text = loaders._ocr_pdf_page(fitz.open(str(path))[0])
 
     assert "4821" in text
+
+
+def test_arabic_scan_fixture_has_no_text_layer():
+    doc = fitz.open(str(FIXTURES / "arabic_scan.pdf"))
+    try:
+        assert doc[0].get_text().strip() == ""
+    finally:
+        doc.close()
+
+
+@requires_arabic
+def test_arabic_scan_is_ocrd_into_arabic_text(monkeypatch):
+    monkeypatch.setattr(loaders, "OCR_LANGS", "ara")
+
+    sections = load_document(FIXTURES / "arabic_scan.pdf")
+
+    assert len(sections) == 1
+    assert "الإيرادات" in sections[0].text
+    assert "2025" in sections[0].text
