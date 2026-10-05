@@ -38,7 +38,7 @@ def load_documents(data_dir: Path = DATA_DIR) -> Tuple[List[str], List[Dict[str,
 
     all_chunks: List[str]             = []
     all_metas:  List[Dict[str, Any]]  = []
-    files = sorted(p for p in data_dir.iterdir() if p.is_file() and is_supported(p))
+    files = sorted(p for p in data_dir.glob("*") if p.is_file() and is_supported(p))
 
     if not files:
         logger.warning(f"No documents ({', '.join(sorted(SUPPORTED_SUFFIXES))}) found in {data_dir}.")
