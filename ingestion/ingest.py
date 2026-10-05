@@ -1,22 +1,21 @@
 """
 ingestion/ingest.py
 ───────────────────
-Loads PDFs, chunks them with rich metadata (page, source, section),
-then builds the hybrid FAISS+BM25 index.
+Loads PDF, DOCX, XLSX and PPTX files, chunks them with rich metadata
+(page/slide/sheet, source), then builds the hybrid FAISS+BM25 index.
 
-Drop your PDFs in the  data/  folder and call:
+Drop your documents in the  data/  folder and call:
     python -m ingestion.ingest
 """
 
 from __future__ import annotations
-import os
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
 
-from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from loguru import logger
 
+from ingestion.loaders import SUPPORTED_SUFFIXES, is_supported, load_document
 from vectorstore.store import build_index
 
 
@@ -25,9 +24,9 @@ CHUNK_SIZE   = 800
 CHUNK_OVERLAP = 150
 
 
-def load_pdfs(data_dir: Path = DATA_DIR) -> Tuple[List[str], List[Dict[str, Any]]]:
+def load_documents(data_dir: Path = DATA_DIR) -> Tuple[List[str], List[Dict[str, Any]]]:
     """
-    Loads all PDFs from data/ directory.
+    Loads all supported documents from data/ directory.
     Returns (chunks, metadatas).
     Each metadata dict: {"source": filename, "page": page_number}
     """
@@ -39,35 +38,30 @@ def load_pdfs(data_dir: Path = DATA_DIR) -> Tuple[List[str], List[Dict[str, Any]
 
     all_chunks: List[str]             = []
     all_metas:  List[Dict[str, Any]]  = []
-    pdf_files   = list(data_dir.glob("*.pdf"))
+    files = sorted(p for p in data_dir.glob("*") if p.is_file() and is_supported(p))
 
-    if not pdf_files:
-        logger.warning(f"No PDFs found in {data_dir}. Add files and re-run.")
+    if not files:
+        logger.warning(f"No documents ({', '.join(sorted(SUPPORTED_SUFFIXES))}) found in {data_dir}.")
         return [], []
 
-    for pdf_path in pdf_files:
-        logger.info(f"Loading: {pdf_path.name}")
-        loader    = PyPDFLoader(str(pdf_path))
-        documents = loader.load()
-
-        for doc in documents:
-            page_num = doc.metadata.get("page", 0)
-            chunks   = splitter.split_text(doc.page_content)
-            for chunk in chunks:
+    for path in files:
+        logger.info(f"Loading: {path.name}")
+        for section in load_document(path):
+            for chunk in splitter.split_text(section.text):
                 if len(chunk.strip()) < 30:   # skip very short fragments
                     continue
                 all_chunks.append(chunk)
                 all_metas.append({
-                    "source": pdf_path.name,
-                    "page":   page_num + 1,   # 1-indexed for display
+                    "source": path.name,
+                    "page":   section.page,
                 })
 
-    logger.success(f"Loaded {len(all_chunks)} chunks from {len(pdf_files)} PDF(s)")
+    logger.success(f"Loaded {len(all_chunks)} chunks from {len(files)} document(s)")
     return all_chunks, all_metas
 
 
 def run_ingestion() -> None:
-    chunks, metas = load_pdfs()
+    chunks, metas = load_documents()
     if chunks:
         build_index(chunks, metas)
         logger.success("Ingestion complete. Index is ready.")

@@ -15,7 +15,15 @@ rank_bm25==0.2.2                    # hybrid BM25 search
 
 # ── Document Loading ─────────────────────────────────────────
 pypdf==5.4.0
+python-docx==1.1.2
+openpyxl==3.1.5
+python-pptx==1.0.2
 unstructured==0.17.2
+
+# ── OCR for scanned PDFs (needs the tesseract binary + ara traineddata) ──
+pymupdf==1.25.5
+pytesseract==0.3.13
+Pillow==11.2.1
 
 # ── API Layer ────────────────────────────────────────────────
 fastapi==0.115.12
@@ -29,6 +37,9 @@ datasets==3.5.0
 
 # ── Web Search Tool (agentic fallback) ───────────────────────
 tavily-python==0.5.1
+
+# ── Testing ──────────────────────────────────────────────────
+pytest==9.1.1
 
 # ── Observability / MLOps ───────────────────────────────────
 loguru==0.7.3

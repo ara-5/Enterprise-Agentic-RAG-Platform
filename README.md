@@ -34,6 +34,7 @@ This project goes beyond a basic RAG chatbot. It implements a **full agentic dec
 - **Cross-encoder reranking** — 2-stage retrieval: retrieve top-20 candidates, rerank to top-5 using `ms-marco-MiniLM` cross-encoder
 - **Corrective RAG** — if retrieved documents score poorly on relevance grading, the agent automatically rewrites the query and retries (up to 2 times)
 - **Web search fallback** — when documents fail after retries, the agent falls back to live Tavily web search
+- **Multi-format ingestion** — PDF, DOCX, XLSX and PPTX, with OCR (Tesseract, Arabic + English) for scanned PDFs
 - **Conversation memory** — maintains full chat history across turns for coherent multi-turn Q&A
 - **Quantified evaluation** — RAGAs metrics tracked per run with a CI quality gate
 
@@ -130,7 +131,8 @@ Genai-rag-agent/
 │   └── embedder.py       # BGE-M3 embeddings + cross-encoder reranker
 │
 ├── ingestion/
-│   └── ingest.py         # PDF loading with page/source metadata extraction
+│   ├── ingest.py         # Chunking with page/source metadata, builds the index
+│   └── loaders.py        # PDF/DOCX/XLSX/PPTX text extraction + OCR for scanned PDFs
 │
 ├── vectorstore/
 │   ├── store.py          # Hybrid BM25+FAISS search with RRF fusion
@@ -138,6 +140,9 @@ Genai-rag-agent/
 │
 ├── evaluation/
 │   └── evaluate.py       # RAGAs evaluation suite
+│
+├── tests/
+│   └── test_loaders.py   # Loader and OCR routing tests (pytest)
 │
 ├── data/                 # Drop PDFs here for indexing
 │
@@ -187,11 +192,19 @@ cp .env.example .env
 ollama pull llama3.2
 ```
 
-### 5. Add your PDFs and index them
+### 5. Add your documents and index them
 
 ```bash
-# Drop PDF files into the data/ folder, then:
+# Drop PDF, DOCX, XLSX or PPTX files into the data/ folder, then:
 python -m ingestion.ingest
+```
+
+Scanned PDFs are OCR'd with Tesseract (Arabic + English by default; override with `OCR_LANGS`, e.g. `ara` only). Install the binary and language packs first:
+
+```bash
+# Debian/Ubuntu
+sudo apt-get install tesseract-ocr tesseract-ocr-ara tesseract-ocr-eng
+# Windows: install from https://github.com/UB-Mannheim/tesseract/wiki and select Arabic in the installer
 ```
 
 ### 6. Start the API and UI
@@ -214,7 +227,7 @@ Open [http://localhost:8501](http://localhost:8501) in your browser.
 Liveness probe. Returns `{"status": "ok"}`.
 
 ### `POST /ingest`
-Upload a PDF and index it.
+Upload a PDF, DOCX, XLSX or PPTX and index it.
 ```bash
 curl -X POST http://localhost:8000/ingest \
   -F "file=@your_document.pdf"
@@ -281,7 +294,8 @@ This ensures retrieval quality never silently degrades across commits.
 - [ ] Multi-document cross-referencing
 - [ ] Cloud deployment (GCP Cloud Run)
 - [ ] Streaming responses via Server-Sent Events
-- [ ] Support for DOCX, CSV, and web URL ingestion
+- [x] Support for DOCX, XLSX, PPTX, and OCR for scanned PDFs (Arabic + English)
+- [ ] CSV and web URL ingestion
 
 ---
 
