@@ -187,11 +187,19 @@ cp .env.example .env
 ollama pull llama3.2
 ```
 
-### 5. Add your PDFs and index them
+### 5. Add your documents and index them
 
 ```bash
-# Drop PDF files into the data/ folder, then:
+# Drop PDF, DOCX, XLSX or PPTX files into the data/ folder, then:
 python -m ingestion.ingest
+```
+
+Scanned PDFs are OCR'd with Tesseract (Arabic + English by default; override with `OCR_LANGS`, e.g. `ara` only). Install the binary and language packs first:
+
+```bash
+# Debian/Ubuntu
+sudo apt-get install tesseract-ocr tesseract-ocr-ara tesseract-ocr-eng
+# Windows: install from https://github.com/UB-Mannheim/tesseract/wiki and select Arabic in the installer
 ```
 
 ### 6. Start the API and UI
@@ -281,7 +289,8 @@ This ensures retrieval quality never silently degrades across commits.
 - [ ] Multi-document cross-referencing
 - [ ] Cloud deployment (GCP Cloud Run)
 - [ ] Streaming responses via Server-Sent Events
-- [ ] Support for DOCX, CSV, and web URL ingestion
+- [x] Support for DOCX, XLSX, PPTX, and OCR for scanned PDFs (Arabic + English)
+- [ ] CSV and web URL ingestion
 
 ---
 

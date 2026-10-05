@@ -26,7 +26,8 @@ from loguru import logger
 from pydantic import BaseModel
 
 from app.agent import ask
-from ingestion.ingest import load_pdfs
+from ingestion.ingest import load_documents
+from ingestion.loaders import SUPPORTED_SUFFIXES
 from vectorstore.store import build_index
 
 
@@ -86,26 +87,30 @@ def health():
 @app.post("/ingest")
 async def ingest(file: UploadFile = File(...)):
     """
-    Upload a PDF and add it to the vector index.
+    Upload a PDF, DOCX, XLSX or PPTX and add it to the vector index.
     Existing index is rebuilt to include the new document.
     """
-    if not file.filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+    filename = Path(file.filename or "").name
+    if Path(filename).suffix.lower() not in SUPPORTED_SUFFIXES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type. Allowed: {', '.join(sorted(SUPPORTED_SUFFIXES))}",
+        )
 
-    dest = DATA_DIR / file.filename
+    dest = DATA_DIR / filename
     content = await file.read()
     dest.write_bytes(content)
     logger.info(f"Saved uploaded file: {dest}")
 
     try:
-        chunks, metas = load_pdfs(DATA_DIR)
+        chunks, metas = load_documents(DATA_DIR)
         build_index(chunks, metas)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ingestion failed: {e}")
 
     return {
         "status":    "indexed",
-        "filename":  file.filename,
+        "filename":  filename,
         "chunks":    len(chunks),
     }
 
