@@ -34,6 +34,7 @@ This project goes beyond a basic RAG chatbot. It implements a **full agentic dec
 - **Cross-encoder reranking** — 2-stage retrieval: retrieve top-20 candidates, rerank to top-5 using `ms-marco-MiniLM` cross-encoder
 - **Corrective RAG** — if retrieved documents score poorly on relevance grading, the agent automatically rewrites the query and retries (up to 2 times)
 - **Web search fallback** — when documents fail after retries, the agent falls back to live Tavily web search
+- **Multi-format ingestion** — PDF, DOCX, XLSX and PPTX, with OCR (Tesseract, Arabic + English) for scanned PDFs
 - **Conversation memory** — maintains full chat history across turns for coherent multi-turn Q&A
 - **Quantified evaluation** — RAGAs metrics tracked per run with a CI quality gate
 
@@ -130,7 +131,8 @@ Genai-rag-agent/
 │   └── embedder.py       # BGE-M3 embeddings + cross-encoder reranker
 │
 ├── ingestion/
-│   └── ingest.py         # PDF loading with page/source metadata extraction
+│   ├── ingest.py         # Chunking with page/source metadata, builds the index
+│   └── loaders.py        # PDF/DOCX/XLSX/PPTX text extraction + OCR for scanned PDFs
 │
 ├── vectorstore/
 │   ├── store.py          # Hybrid BM25+FAISS search with RRF fusion
@@ -138,6 +140,9 @@ Genai-rag-agent/
 │
 ├── evaluation/
 │   └── evaluate.py       # RAGAs evaluation suite
+│
+├── tests/
+│   └── test_loaders.py   # Loader and OCR routing tests (pytest)
 │
 ├── data/                 # Drop PDFs here for indexing
 │
@@ -222,7 +227,7 @@ Open [http://localhost:8501](http://localhost:8501) in your browser.
 Liveness probe. Returns `{"status": "ok"}`.
 
 ### `POST /ingest`
-Upload a PDF and index it.
+Upload a PDF, DOCX, XLSX or PPTX and index it.
 ```bash
 curl -X POST http://localhost:8000/ingest \
   -F "file=@your_document.pdf"
