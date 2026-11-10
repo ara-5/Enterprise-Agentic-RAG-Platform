@@ -123,7 +123,7 @@ Genai-rag-agent/
 │
 ├── app/
 │   ├── agent.py          # LangGraph Corrective RAG agent graph
-│   ├── api.py            # FastAPI endpoints (POST /query, POST /ingest, GET /health)
+│   ├── api.py            # FastAPI endpoints (POST /query, POST /ingest, GET /health, GET /info)
 │   └── main.py           # Streamlit chat UI
 │
 ├── embeddings/
@@ -209,6 +209,16 @@ Open [http://localhost:8501](http://localhost:8501) in your browser.
 ---
 
 ## 📡 API Reference
+
+### `GET /info`
+Returns basic application metadata.
+```json
+{
+  "service": "enterprise-agentic-rag",
+  "api_version": "v1",
+  "description": "Document ingestion and question-answering API"
+}
+```
 
 ### `GET /health`
 Liveness probe. Returns `{"status": "ok"}`.
