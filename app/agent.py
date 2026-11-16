@@ -29,7 +29,6 @@ from typing import Any, Dict, List, Annotated, Literal, Optional, TypedDict
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from langchain_ollama import ChatOllama
-from langchain_community.tools.tavily_search import TavilySearchResults
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from loguru import logger
@@ -40,13 +39,24 @@ load_dotenv()
 
 # ── LLM (local Ollama — swap to any LangChain-compatible model) ───────────────
 LLM_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")   # change to mistral, qwen2.5, etc.
-llm = ChatOllama(model=LLM_MODEL, temperature=0.1)
+llm: Optional[ChatOllama] = None
+try:
+    llm = ChatOllama(model=LLM_MODEL, temperature=0.1)
+except Exception as exc:  # pragma: no cover - depends on local environment
+    logger.warning(f"Ollama is unavailable; LLM features will be disabled until it is running: {exc}")
 
 # ── Web search fallback (free Tavily key at tavily.com) ──────────────────────
-web_search_tool = TavilySearchResults(
-    max_results=3,
-    tavily_api_key=os.getenv("TAVILY_API_KEY", ""),
-)
+web_search_tool = None
+api_key = os.getenv("TAVILY_API_KEY")
+if api_key:
+    try:
+        from langchain_community.tools.tavily_search import TavilySearchResults
+        web_search_tool = TavilySearchResults(
+            max_results=3,
+            tavily_api_key=api_key,
+        )
+    except Exception as exc:  # pragma: no cover - depends on optional package/env
+        logger.warning(f"Tavily search is unavailable: {exc}")
 
 MAX_REWRITES = 2   # prevent infinite loops
 
@@ -76,6 +86,18 @@ def _last_human_query(state: AgentState) -> str:
     return state.get("query") or ""  # type: ignore[union-attr]
 
 
+def _invoke_llm(prompt: str, *, fallback: str = "") -> str:
+    """Invoke the LLM when available; otherwise return a safe fallback."""
+    if llm is None:
+        return fallback
+    try:
+        response = llm.invoke([HumanMessage(content=prompt)])
+        return str(response.content).strip()
+    except Exception as exc:
+        logger.warning(f"LLM invocation failed: {exc}")
+        return fallback
+
+
 # ── Nodes ────────────────────────────────────────────────────────────────────
 
 def route_query(state: AgentState) -> AgentState:
@@ -90,8 +112,8 @@ def route_query(state: AgentState) -> AgentState:
         "- Reply 'llm_only' if it's general knowledge you can answer without documents.\n\n"
         f"Question: {query}\n\nReply with exactly one word: documents OR llm_only"
     )
-    response = llm.invoke([HumanMessage(content=prompt)])
-    decision = response.content.strip().lower()
+    response_text = _invoke_llm(prompt, fallback="documents")
+    decision = response_text.lower()
     if "documents" not in decision:
         decision = "llm_only"
     logger.info(f"[route_query] decision='{decision}' for query='{query[:60]}'")
@@ -121,8 +143,8 @@ def grade_documents(state: AgentState) -> AgentState:
             f"Document chunk:\n{chunk['text']}\n\n"
             "Is this chunk relevant to answering the question? Reply yes or no."
         )
-        resp = llm.invoke([HumanMessage(content=prompt)])
-        if "yes" in resp.content.lower():
+        resp_text = _invoke_llm(prompt, fallback="no")
+        if "yes" in resp_text.lower():
             relevant.append(chunk)
 
     logger.info(f"[grade_documents] {len(relevant)}/{len(context)} chunks relevant")
@@ -141,8 +163,7 @@ def rewrite_query(state: AgentState) -> AgentState:
         "Rewrite it to be more specific and likely to match technical documentation. "
         "Return only the rewritten question, nothing else."
     )
-    response      = llm.invoke([HumanMessage(content=prompt)])
-    new_query     = str(response.content).strip()
+    new_query = _invoke_llm(prompt, fallback=query).strip()
     rewrite_count = int(state.get("rewrite_count") or 0) + 1  # type: ignore[union-attr]
     logger.info(f"[rewrite_query] attempt {rewrite_count}: '{new_query[:80]}'")
     return {**state, "query": new_query, "rewrite_count": rewrite_count}
@@ -150,8 +171,15 @@ def rewrite_query(state: AgentState) -> AgentState:
 
 def web_search(state: AgentState) -> AgentState:
     """Tavily web search as last-resort fallback."""
-    query   = state["query"]
-    results = web_search_tool.invoke(query)
+    query = state["query"]
+    if web_search_tool is None:
+        logger.warning("[web_search] Tavily API key is missing; skipping web fallback.")
+        return {**state, "web_results": []}
+    try:
+        results = web_search_tool.invoke(query)
+    except Exception as exc:
+        logger.warning(f"[web_search] search failed: {exc}")
+        return {**state, "web_results": []}
     snippets = [r["content"] for r in results if "content" in r]
     logger.info(f"[web_search] got {len(snippets)} web results")
     return {**state, "web_results": snippets}
@@ -198,6 +226,22 @@ def generate(state: AgentState) -> AgentState:
         f"Context:\n{ctx_block}\n\n"
         f"Question: {query}"
     )
+    if llm is None:
+        if context:
+            first_chunk = context[0]["text"]
+            answer = first_chunk[:500].strip()
+            if not answer.endswith("."):
+                answer += "."
+            answer = f"I could not access the local LLM, so here is the best available context summary: {answer}"
+        else:
+            answer = "The local LLM is unavailable, and there is no retrieved context to answer the question from."
+        logger.warning("[generate] LLM unavailable; returning fallback answer.")
+        return {
+            **state,
+            "answer": answer,
+            "messages": state["messages"] + [AIMessage(content=answer)],
+        }
+
     response = llm.invoke([
         HumanMessage(content=f"[SYSTEM]\n{system}\n\n[USER]\n{user_prompt}")
     ])

@@ -8,6 +8,7 @@ Endpoints
   POST /ingest        upload a PDF and index it
   POST /query         ask a question, get an answer + sources
   GET  /health        liveness probe (required for cloud deploy)
+  GET  /info          application metadata
   GET  /metrics       RAGAs evaluation scores (if run)
 
 Run locally:
@@ -76,6 +77,16 @@ class QueryResponse(BaseModel):
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
+
+@app.get("/info")
+def info():
+    """Return basic application metadata."""
+    return {
+        "service": "enterprise-agentic-rag",
+        "api_version": "v1",
+        "description": "Document ingestion and question-answering API",
+    }
+
 
 @app.get("/health")
 def health():
@@ -151,3 +162,4 @@ def metrics():
     if METRICS_FILE.exists():
         return json.loads(METRICS_FILE.read_text())
     return {"detail": "No evaluation scores yet. Run: python -m evaluation.evaluate"}
+
