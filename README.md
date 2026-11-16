@@ -14,7 +14,7 @@
 ## 📋 Table of Contents
 
 - [Overview](#-overview)
-- [Architecture](#-architecture)
+- [Architecture](#-architecture)x
 - [Tech Stack](#-tech-stack)
 - [RAGAs Evaluation Results](#-ragas-evaluation-results)
 - [Project Structure](#-project-structure)
